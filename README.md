@@ -2,7 +2,7 @@
 Add a simple control to bump the zoomOffset beyond the default / retine / hdpi setting. This allows you to view higher zoom-level tiles in a large display. Mind your bandwidth, though.
 
 # Demo
-[Demo](https://htmlpreview.github.io/?https://github.com/valkenburg/Leaflet.Control.DetailLevel/blob/master/demo.html)
+[Demo](https://valkenburg.github.io/Leaflet.Control.DetailLevel/demo.html)
 
 # Usage
 The simplest is to include this plugin after including leaflet:
