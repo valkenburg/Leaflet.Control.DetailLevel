@@ -4,6 +4,9 @@ Add a simple control to bump the zoomOffset beyond the default / retine / hdpi s
 # Demo
 [Demo](https://valkenburg.github.io/Leaflet.Control.DetailLevel/demo.html)
 
+# Source code
+[Repository on github](https://github.com/valkenburg/Leaflet.Control.DetailLevel)
+
 # Usage
 The simplest is to include this plugin after including leaflet:
 
