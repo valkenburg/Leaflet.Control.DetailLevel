@@ -1,5 +1,5 @@
 # Leaflet.Control.DetailLevel
-Add a simple control to bump the zoomOffset beyond the default / retine / hdpi setting. This allows you to view higher zoom-level tiles in a large display. Mind your bandwidth, though.
+Add a simple control to bump the zoomOffset beyond the default / retine / hdpi setting. This allows you to view higher zoom-level tiles in a large display. Mind your bandwidth, though. See also [this question on StackOverflow](https://stackoverflow.com/q/54108379).
 
 # Demo
 [Demo](https://valkenburg.github.io/Leaflet.Control.DetailLevel/demo.html)
