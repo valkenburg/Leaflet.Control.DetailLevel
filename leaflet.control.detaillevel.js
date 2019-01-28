@@ -17,16 +17,16 @@ L.Control.DetailLevel = L.Control.extend({
         position: "topright"
     },
 
-    initialize : function (minOffset, maxOffset) {
+    initialize : function (defaultLevel, minOffset, maxOffset) {
         /* leave the possibility open for a user to have layers with different
            zoomOffsets already. This control should be agnostic about that, so
            we track our internal counter which satisfies the set maximum, and just
            add this number to whatever the initialized layers have already set. */
-        this.internalOffsetCounter = 0;
+        this.internalOffsetCounter = defaultLevel;
 
         /* default to a maximum offset of 3, since 2^3 = 8 tiles per canonical tile already. */
         this.maxOffset = maxOffset == null ? 3 : Math.max(maxOffset, 0);
-        this.minOffset = minOffset == null ? 0 : Math.max(minOffset, -1);
+        this.minOffset = minOffset == null ? 0 : Math.max(minOffset, -10);
 
         /* avoid too many taps on the buttons when the map is still updating. */
         this.updateLock = false;
@@ -50,16 +50,21 @@ L.Control.DetailLevel = L.Control.extend({
     onAdd : function (map) {
 
         this.map = map;
+        
+        this.map.on("layeradd", this.refresh.bind(this));
 
         this.attachLoadListeners(map);
 
         this.container = L.DomUtil.create("DIV", "leaflet-bar leaflet-control leaflet-control-custom");
 
-        this.aPlus = this.makeButton("+", this.increaseDetail.bind(this));
+        this.aPlus = this.makeButton("D+", this.increaseDetail.bind(this));
 
-        this.aMinus = this.makeButton("-", this.decreaseDetail.bind(this));
+        this.countShow = this.makeButton("0", function(){});
+
+        this.aMinus = this.makeButton("D-", this.decreaseDetail.bind(this));
 
         this.container.appendChild(this.aPlus);
+        this.container.appendChild(this.countShow);
         this.container.appendChild(this.aMinus);
 
         return this.container;
@@ -70,16 +75,18 @@ L.Control.DetailLevel = L.Control.extend({
         result.href = "#";
         result.style.font = "bold 18px 'Lucida Console', Monaco, monospace";
         result.addEventListener("click", callback);
-        result.innerText = "D" + innerText;
+        result.innerText = innerText;
         return result;
     },
 
-    increaseDetail : function() {
+    increaseDetail : function(evt) {
         this.changeDetail(1);
+        if(evt) evt.stopPropagation();
     },
 
-    decreaseDetail : function() {
+    decreaseDetail : function(evt) {
         this.changeDetail(-1);
+        if(evt) evt.stopPropagation();
     },
 
     canChangeDetail : function (delta) {
@@ -87,6 +94,7 @@ L.Control.DetailLevel = L.Control.extend({
         let canDoZoom =
             this.internalOffsetCounter + delta <= this.maxOffset
          && this.internalOffsetCounter + delta >= this.minOffset;
+        return canDoZoom;
 
         let me = this;
 
@@ -95,17 +103,30 @@ L.Control.DetailLevel = L.Control.extend({
                 if ( "zoomOffset" in layer.options ) {
                     /* when incrementing zoomOffset, we decrement
                        maxZoom. This means that zoomOffset + maxZoom is a constant, reflecting the actual maxZoom of the map source. */
-                    let maxZoom_gaugeIndependent = layer.options.maxZoom + layer.options.zoomOffset;
+                    let maxZoom_gaugeIndependent = ( (undefined !== layer.options.maxNativeZoom) ? layer.options.maxNativeZoom : layer.options.maxZoom) + layer.options.zoomOffset;
                     let minZoom_gaugeIndependent = layer.options.minZoom + layer.options.zoomOffset;
                     let nextZoomIfApplied = layer._tileZoom + layer.options.zoomOffset + delta;
                     canDoZoom = canDoZoom
                         && nextZoomIfApplied >= minZoom_gaugeIndependent
-                        && nextZoomIfApplied < maxZoom_gaugeIndependent
+                        && nextZoomIfApplied <= maxZoom_gaugeIndependent
                           ;
                 }
             });
         }
         return canDoZoom;
+    },
+
+    attachDirtToLayer : function (layer) {
+        if ( layer.options._detailLevelControlInfo ) return;
+        let dirt = {
+            tileSize : layer.options.tileSize,
+            maxZoom : layer.options.maxZoom,
+            minZoom : layer.options.minZoom,
+            maxNativeZoom : layer.options.maxNativeZoom,
+            minNativeZoom : layer.options.minNativeZoom,
+            zoomOffset : layer.options.zoomOffset
+        };
+        layer.options._detailLevelControlInfo = dirt;
     },
 
     changeDetail : function (delta) {
@@ -115,17 +136,40 @@ L.Control.DetailLevel = L.Control.extend({
         if ( this.canChangeDetail(delta) ) {
 
             this.internalOffsetCounter += delta;
+            let newOffset = this.internalOffsetCounter;
+            this.countShow.innerText = this.internalOffsetCounter;
 
             let overallMaxZoom = -1;
             let overallMinZoom = 1e30;
+            let me = this;
             this.map.eachLayer(function (layer) {
                 if ( "zoomOffset" in layer.options ) {
-                    layer.options.tileSize = Math.round(Math.pow(2, -delta) * layer.options.tileSize);
 
-                    layer.options.zoomOffset += delta;
-                    layer.options.maxZoom -= delta;
+                    me.attachDirtToLayer(layer);
+                    let native = layer.options._detailLevelControlInfo;
+
+                    layer.options.tileSize = Math.round(Math.pow(2, -newOffset) * native.tileSize);
+
+                    layer.options.zoomOffset = native.zoomOffset + newOffset;
+
+                    /* use native max / min zooms here:
+                       leaflet smartly scales the images when we go beyond
+                       the native zooms. That is exactly what we need:
+                       if the offset zoom is maxed out, allow for scaling.
+                       So, adapt the native zooms according to our offset. */
+                    if (undefined !== native.maxNativeZoom)  {
+                        layer.options.maxNativeZoom = native.maxNativeZoom - newOffset;
+                    } else {
+                        layer.options.maxNativeZoom = native.maxZoom - newOffset;
+                    }
+
                     overallMaxZoom = Math.max(overallMaxZoom, layer.options.maxZoom);
-                    layer.options.minZoom -= delta;
+
+                    if (undefined !== native.minNativeZoom)  {
+                        layer.options.minNativeZoom = native.minNativeZoom - newOffset;
+                    } else {
+                        layer.options.minNativeZoom = native.minZoom - newOffset;
+                    }
                     overallMinZoom = Math.min(overallMinZoom, layer.options.minZoom);
 
                     layer._resetGrid();
@@ -140,6 +184,9 @@ L.Control.DetailLevel = L.Control.extend({
             this.map._resetView(this.map.getCenter(), this.map.getZoom());
         }
 
+    },
+    refresh : function() {
+        this.changeDetail(0);
     }
 
 });
